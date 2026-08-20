@@ -1,0 +1,177 @@
+name: lx-platform
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_CHANGE_ME}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lx_platform}
+      MYSQL_USER: ${MYSQL_USER:-lx_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-CHANGE_ME}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-lx}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-CHANGE_ME}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+    networks:
+      - internal
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lx_platform}
+      MYSQL_USER: ${MYSQL_USER:-lx_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-CHANGE_ME}
+      CELERY_ENABLED: "true"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: ${RABBITMQ_USER:-lx}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-CHANGE_ME}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_1234567890}
+      ADMIN_INIT_USERNAME: ${ADMIN_INIT_USERNAME:-superadmin}
+      ADMIN_INIT_PASSWORD: ${ADMIN_INIT_PASSWORD:-Admin@123456}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - internal
+
+  celery-worker:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app:celery_app worker --loglevel=info
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lx_platform}
+      MYSQL_USER: ${MYSQL_USER:-lx_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-CHANGE_ME}
+      CELERY_ENABLED: "true"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-lx}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-CHANGE_ME}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_1234567890}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - internal
+
+  celery-beat:
+    build: ./backend
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app:celery_app beat --loglevel=info
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      MYSQL_HOST: mysql
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-lx_platform}
+      MYSQL_USER: ${MYSQL_USER:-lx_app}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-CHANGE_ME}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-CHANGE_ME}
+      CELERY_ENABLED: "true"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: ${RABBITMQ_USER:-lx}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-CHANGE_ME}
+      JWT_SECRET: ${JWT_SECRET:-CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME_1234567890}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    networks:
+      - internal
+
+  web:
+    build: ./web
+    restart: unless-stopped
+    networks:
+      - internal
+
+  admin:
+    build: ./admin
+    restart: unless-stopped
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - backend
+      - web
+      - admin
+    networks:
+      - internal
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

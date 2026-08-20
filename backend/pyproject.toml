@@ -1,0 +1,40 @@
+[project]
+name = "lx-platform-backend"
+version = "1.0.0"
+description = "LX Platform - 订单撮合与会员服务平台 后端"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "ASYNC"]
+ignore = ["B008", "B024", "B027", "B905", "UP006", "UP035", "E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/**" = ["E", "F", "UP"]
+"tests/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+exclude = ["alembic/"]
+
+[[tool.mypy.overrides]]
+module = ["app.models.*"]
+ignore_errors = true
